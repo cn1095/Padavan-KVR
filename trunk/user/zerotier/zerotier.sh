@@ -2,10 +2,12 @@
 #20200426 chongshengB
 #20210410 xumng123
 #20240831 fightround
-PROG=/usr/bin/zerotier-one
-PROGCLI=/usr/bin/zerotier-cli
-PROGIDT=/usr/bin/zerotier-idtool
+PROG=/etc/storage/bin/zerotier-one
+PROGCLI=/etc/storage/bin/zerotier-cli
+PROGIDT=/etc/storage/bin/zerotier-idtool
 config_path="/etc/storage/zerotier-one"
+user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+github_proxys="$(nvram get github_proxy)"
 start_instance() {
 	port=""
 	args=""
@@ -33,7 +35,7 @@ start_instance() {
 		$PROGIDT getpublic $config_path/identity.secret >$config_path/identity.public
 		#rm -f $config_path/identity.public
 	fi
-
+	logger -t "zerotier" "启动 $PROG $args $config_path"
 	$PROG $args $config_path >/dev/null 2>&1 &
 
 	while [ ! -f $config_path/zerotier-one.port ]; do
@@ -59,19 +61,19 @@ rules() {
 	zt0=$(ifconfig | grep zt | awk '{print $1}')
 	del_rules
  	logger -t "zerotier" "添加防火墙规则中..."
-	iptables -A INPUT -i $zt0 -j ACCEPT
-	iptables -A FORWARD -i $zt0 -o $zt0 -j ACCEPT
-	iptables -A FORWARD -i $zt0 -j ACCEPT
+	iptables -I INPUT -i $zt0 -j ACCEPT
+	iptables -I FORWARD -i $zt0 -o $zt0 -j ACCEPT
+	iptables -I FORWARD -i $zt0 -j ACCEPT
 	if [ $nat_enable -eq 1 ]; then
-		iptables -t nat -A POSTROUTING -o $zt0 -j MASQUERADE
+		iptables -t nat -I POSTROUTING -o $zt0 -j MASQUERADE
 		while [ "$(ip route | grep -E "dev\s+$zt0\s+proto\s+kernel"| awk '{print $1}')" = "" ]; do
 		    sleep 1
 		done
 		ip_segment=$(ip route | grep -E "dev\s+$zt0\s+proto\s+kernel"| awk '{print $1}')
                 logger -t "zerotier" "$zt0 网段为$ip_segment 添加进NAT规则中..."
-		iptables -t nat -A POSTROUTING -s $ip_segment -j MASQUERADE
+		iptables -t nat -I POSTROUTING -s $ip_segment -j MASQUERADE
 	fi
-		logger -t "zerotier" "zerotier接口: $zt0 启动成功!"
+	logger -t "zerotier" "zerotier接口: $zt0 启动成功!"
 }
 
 del_rules() {
@@ -87,6 +89,34 @@ del_rules() {
 
 start_zero() {
 	logger -t "zerotier" "正在启动zerotier"
+ 	if [ ! -f "$PROG" ] ; then
+		logger -t "zerotier" "主程序${$PROG}不存在，开始在线下载..."
+  		curltest=`which curl`
+    		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+      			tag="$( wget -T 5 -t 3 --user-agent "$user_agent" --max-redirect=0 --output-document=-  https://api.github.com/repos/lmq8267/ZeroTierOne/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+	 		[ -z "$tag" ] && tag="$( wget -T 5 -t 3 --user-agent "$user_agent" --quiet --output-document=-  https://api.github.com/repos/lmq8267/ZeroTierOne/releases/latest  2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+    		else
+      			tag="$( curl --connect-timeout 3 --user-agent "$user_agent"  https://api.github.com/repos/lmq8267/ZeroTierOne/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+       			[ -z "$tag" ] && tag="$( curl -L --connect-timeout 3 --user-agent "$user_agent" -s  https://api.github.com/repos/lmq8267/ZeroTierOne/releases/latest  2>&1 | grep 'tag_name' | cut -d\" -f4 )"
+       		fi
+	 	[ -z "$tag" ] && tag="1.14.2"
+   		logger -t "zerotier" "开始下载 https://github.com/lmq8267/ZeroTierOne/releases/download/${tag}/zerotier-one 到 $PROG"
+     		for proxy in $github_proxys ; do
+       			curl -Lkso "$PROG" "${proxy}https://github.com/lmq8267/ZeroTierOne/releases/download/${tag}/zerotier-one" || wget --no-check-certificate -q -O "$PROG" "${proxy}https://github.com/lmq8267/ZeroTierOne/releases/download/${tag}/zerotier-one" || curl -Lkso "$PROG" "https://fastly.jsdelivr.net/gh/lmq8267/ZeroTierOne@master/install/${tag}/zerotier-one" || wget --no-check-certificate -q -O "$PROG" "https://fastly.jsdelivr.net/gh/lmq8267/ZeroTierOne@master/install/${tag}/zerotier-one"
+       			if [ "$?" = 0 ] ; then
+	  			chmod +x $PROG
+      				if [ $(($($PROG -h | wc -l))) -gt 3 ] ; then
+	  				logger -t "zerotier" "$PROG 下载成功"
+       				else
+	   				logger -t "zerotier" "下载失败，请手动下载 https://github.com/lmq8267/ZeroTierOne/releases/download/${tag}/zerotier-one 上传到  $PROG"
+					exit 1
+	  			fi
+	  		else
+				logger -t "zerotier" "下载失败，请手动下载 https://github.com/lmq8267/ZeroTierOne/releases/download/${tag}/zerotier-one 上传到  $PROG"
+				exit 1
+   			fi
+	 	done
+  	fi
 	kill_z
 	start_instance 'zerotier'
 
@@ -94,7 +124,7 @@ start_zero() {
 kill_z() {
 	zerotier_process=$(pidof zerotier-one)
 	if [ -n "$zerotier_process" ]; then
-		logger -t "zerotier" "有进程在运行，结束中..."
+		logger -t "zerotier" "有进程 $zerotier_proces 在运行，结束中..."
 		killall zerotier-one >/dev/null 2>&1
 		kill -9 "$zerotier_process" >/dev/null 2>&1
 	fi
