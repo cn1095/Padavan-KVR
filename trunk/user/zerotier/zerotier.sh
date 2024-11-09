@@ -91,6 +91,7 @@ start_zero() {
 	logger -t "zerotier" "正在启动zerotier"
  	if [ ! -f "$PROG" ] ; then
 		logger -t "zerotier" "主程序${$PROG}不存在，开始在线下载..."
+  		[ ! -d /etc/storage/bin ] && mkdir -p /etc/storage/bin
   		curltest=`which curl`
     		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
       			tag="$( wget -T 5 -t 3 --user-agent "$user_agent" --max-redirect=0 --output-document=-  https://api.github.com/repos/lmq8267/ZeroTierOne/releases/latest 2>&1 | grep 'tag_name' | cut -d\" -f4 )"
