@@ -74,6 +74,23 @@ rules() {
 		iptables -t nat -I POSTROUTING -s $ip_segment -j MASQUERADE
 	fi
 	logger -t "zerotier" "zerotier接口: $zt0 启动成功!"
+ 	count=0
+        while [ $count -lt 5 ]
+        do
+       ztstatus=$(zerotier-cli info | awk '{print $5}')
+       if [ "$ztstatus" = "OFFLINE" ]; then
+	        sleep 2
+        elif [ "$ztstatus" = "ONLINE" ]; then
+        	ztid=$(zerotier-cli info | awk '{print $3}')
+        	logger -t "zerotier" "若官网没有此设备，请收到绑定此设备ID $ztid "
+        	break
+        fi
+        count=$(expr $count + 1)
+        done
+	if [ "$(zerotier-cli info | awk '{print $5}')" = "OFFLINE" ] ; then
+	  logger -t "zerotier" "当前zerotier未上线，可能你的网络无法链接到zerotier官方服务器！"
+          exit 1
+        fi
 }
 
 del_rules() {
