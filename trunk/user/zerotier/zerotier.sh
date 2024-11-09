@@ -118,6 +118,8 @@ start_zero() {
    			fi
 	 	done
   	fi
+   	[ ! -L "$PROGCLI" ] && ln -sf $PROG $PROGCLI
+    	[ ! -L "$PROGIDT" ] && ln -sf $PROG $PROGIDT
 	kill_z
 	start_instance 'zerotier'
 
